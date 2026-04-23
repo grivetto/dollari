@@ -1,0 +1,27 @@
+
+import logging
+
+logger = logging.getLogger("ExitStrategy")
+
+class ExitManager:
+    def __init__(self, trailing_stop_pct=0.5, activation_threshold=1.0):
+        """
+        :param trailing_stop_pct: Distanza dallo stop in % dal picco
+        :param activation_threshold: Profitto minimo % per attivare il trailing
+        """
+        self.trailing_stop_pct = trailing_stop_pct
+        self.activation_threshold = activation_threshold
+
+    def calculate_trailing_stop(self, entry_price, current_price, highest_price):
+        """
+        Calcola il nuovo Stop Loss basato sul massimo raggiunto.
+        """
+        profit_pct = ((current_price - entry_price) / entry_price) * 100
+        
+        # Attiva trailing solo se abbiamo raggiunto la soglia di profitto
+        if profit_pct >= self.activation_threshold:
+            # Nuova SL = Massimo raggiunto * (1 - trailing_pct)
+            new_sl = highest_price * (1 - self.trailing_stop_pct / 100)
+            return new_sl
+            
+        return None # Continua a usare lo stop loss originale

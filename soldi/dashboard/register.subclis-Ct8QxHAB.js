@@ -1,0 +1,12 @@
+import "./logger-kwZIqwuw.js";
+import "./paths-ViKUYWUK.js";
+import "./tmp-openclaw-dir-idKIOMmb.js";
+import "./theme-CdOoMzRk.js";
+import "./globals-DBUMOBZ8.js";
+import "./subsystem-DISldKSB.js";
+import "./ansi-BEJF8NKS.js";
+import "./boolean-C3GkJetE.js";
+import "./env-Dnra1IpT.js";
+import { n as loadValidatedConfigForPluginRegistration, r as registerSubCliByName } from "./register.subclis-BUnrXd5X.js";
+import "./subcli-descriptors-DClhOxak.js";
+export { loadValidatedConfigForPluginRegistration, registerSubCliByName };

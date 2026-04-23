@@ -1,0 +1,6 @@
+data/
+logs/
+positions/
+__pycache__/
+*.pyc
+*.log

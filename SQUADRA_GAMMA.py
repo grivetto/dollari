@@ -1,0 +1,1 @@
+/home/sergio/denaro/squadra_gamma_pairs.py

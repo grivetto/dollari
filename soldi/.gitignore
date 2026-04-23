@@ -1,0 +1,9 @@
+trading_bot_env/
+*.log
+.env
+__pycache__/
+*.pyc
+logs/
+status/
+*.json
+*.lock

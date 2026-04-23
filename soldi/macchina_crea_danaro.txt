@@ -1,0 +1,31 @@
+# MACCHINA CREA DANARO - PROJECT SPEC
+
+## Obiettivo
+Generazione di profitto costante tramite trading quantitativo automatizzato, senza leva, focalizzato su Spot.
+
+## Architettura Distribuita
+Il sistema è distribuito su 3 nodi per massimizzare stabilità e specializzazione:
+
+1. NUVOLA (87.106.3.15): Core Trading & Monitoring
+   - Grid Bot V2 (Turbo Mode)
+   - DCA Bot (BTC)
+   - AI Risk Engine (Kelly Criterion)
+   - Crisis Manager (Kill Switch)
+   - Telegram Controller
+
+2. MC2 (93.43.252.114): High-Frequency & Sniper
+   - Sniper V2 (RSI/Imbalance)
+   - Trend Follower
+   - Profit API & Dashboard
+
+3. MARCODG1 (87.106.222.123): Backup & Specialized Trend
+   - Trend Follower (Mirror/Backup)
+
+## Componenti Chiave
+- Controllo: Gestione tramite systemd services (prefisso `denaro-*`).
+- Alerting: Notifiche in tempo reale via Telegram (@Sergiotrdxbot).
+- Dashboard: Monitoraggio visivo delle performance e dei capitali.
+- Rischio: Gestione rigorosa del drawdown, NO leverage, capitalizzazione composta.
+
+## Filosofia Operativa
+Brutal honesty. Niente simulazioni, solo ordini veri. Ottimizzazione costante basata sui dati reali.

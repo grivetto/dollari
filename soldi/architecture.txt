@@ -1,0 +1,55 @@
+```mermaid
+graph TD;
+    %% -- CORE INFRASTRUCTURE --
+    subgraph "Core Infrastructure & Guardiani"
+        Z[🛡️ Zabbix Watchdog\nMonitoraggio Server/RAM] --> |Riavvia bot zombie| LG
+        LG[👑 Lite Guardian\nProcess Manager]
+        CM[🚨 Crisis Manager\nDEFCON 2] --> |Blocca Acquisti Spot| LG
+        MS[🧹 Midnight Sweeper\nBackup Notturno 33% Vault]
+    end
+
+    %% -- TIER 1: BINANCE SPOT --
+    subgraph "Tier 1: Binance Spot (Roccaforte 85%)"
+        SS[🎯 Sniper Squad\n(15 Bot Direzionali)]
+        LEG[🛡️ Legionari\n(28 Micro-Bot)]
+        OG[🕸️ Olympus Grid\n(Scalping Laterale)]
+        AE[🌏 Asian Echo Sniper\n(Arbitraggio Latenza MEXC)]
+    end
+    LG --> SS
+    LG --> LEG
+    LG --> OG
+    LG --> AE
+
+    %% -- TIER 2: MEXC SPOT --
+    subgraph "Tier 2: MEXC Spot (HFT Laboratorio)"
+        NS[⚡ Nano Squad\n(Scalping a 0 Fee)]
+    end
+    LG --> NS
+
+    %% -- TIER 3: BITGET FUTURES --
+    subgraph "Tier 3: Bitget Futures (Forze Speciali)"
+        KB[💣 Kamikaze Bot\n(SOL Long Momentum)]
+        BR[⚔️ Blade Runner\n(Scalper Direzionale Leva 10x)]
+    end
+    LG --> KB
+    LG --> BR
+
+    %% -- TIER 4: DELTA NEUTRAL HEDGE --
+    subgraph "Tier 4: Motore Hedging (Scudo Globale)"
+        DH[🛡️ Delta Neutral Hedger\nShort BTC su Bitget]
+        DH -.->|Legge Esposizione| SS
+        DH -.->|Legge Esposizione| LEG
+    end
+    LG --> DH
+
+    %% -- DATI ALTERNATIVI & INTELLIGENZA --
+    subgraph "Intelligenza Artificiale & Sensori"
+        WS[⚡ WebSocket RAM-Disk\n(/dev/shm)] -.->|Dati <5ms| SS
+        WS -.->|Dati <5ms| OG
+        
+        WA[🐋 Whale Tracker\nProxy On-Chain Volume] --> |Allerta Balena| SS
+        NSN[📰 News Sentiment Sniper\nRSS Cointelegraph/CoinDesk] --> |Segnale LONG/DEFCON| CM
+        
+        AGI[🧠 Evolutionary AI Engine\n(Machine Learning Builder)] -.-> |Inventa e Deploya bot| LG
+    end
+```

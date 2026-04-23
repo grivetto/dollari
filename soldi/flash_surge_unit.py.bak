@@ -1,0 +1,61 @@
+import gc
+import os
+import time
+import json
+import logging
+import pandas as pd
+import pandas_ta as ta
+from binance.client import Client
+from dotenv import load_dotenv
+from datetime import datetime
+
+load_dotenv()
+client = Client(os.getenv('BINANCE_API_KEY'), os.getenv('BINANCE_API_SECRET'))
+
+# CONFIGURAZIONE FLASH (ULTRA-AGGRESSIVA)
+SYMBOLS = ["AVAXEUR", "DOGEEUR", "SOLEUR", "ETHEUR", "PEPEEUR", "SHIBEUR", "BNBEUR", "LINKEUR"]
+RISK_BTC = 30.0 # 30 EUR 
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+logger = logging.getLogger("FLASH")
+
+def main():
+    logger.info("⚡ FLASH SURGE UNIT - SCALPING FORZATO ATTIVO")
+    positions = {}
+    
+    while True:
+        try:
+            for s in SYMBOLS:
+                klines = client.get_klines(symbol=s, interval='1m', limit=20)
+                df = pd.DataFrame(klines, columns=['ts', 'o', 'h', 'l', 'c', 'v', 'ct', 'qv', 'nt', 'tb', 'tq', 'i'])
+                df['c'] = pd.to_numeric(df['c'])
+                
+                ema = ta.ema(df['c'], length=9).iloc[-1]
+                rsi = ta.rsi(df['c'], length=7).iloc[-1]
+                price = df['c'].iloc[-1]
+                
+                # Ingressi ancora più facili
+                if rsi > 45 and price > ema and s not in positions:
+                    logger.info(f"🚀 FLASH ENTRY: {s}")
+                    try:
+                        client.create_order(symbol=s, side='BUY', type='MARKET', quoteOrderQty=round(RISK_BTC, 6))
+                        positions[s] = {'entry': price, 'time': time.time()}
+                    except: pass
+                gc.collect()
+
+                if s in positions:
+                    pnl = (price - positions[s]['entry']) / positions[s]['entry']
+                    # Uscita a 0.4% (MICRO-PROFITTO IMMEDIATO)
+                    if pnl >= 0.004 or pnl <= -0.01 or (time.time() - positions[s]['time'] > 180):
+                        try:
+                            asset = s.replace('BTC', '')
+                            bal = float(client.get_asset_balance(asset=asset)['free'])
+                            if bal > 0:
+                                client.create_order(symbol=s, side='SELL', type='MARKET', quantity=bal)
+                                logger.info(f"✅ FLASH SELL: {s} PnL: {pnl:.2%}")
+                                del positions[s]
+                                with open('/home/sergio/.openclaw/workspace/denaro/strike_alert.flag', 'w') as f:
+                                    f.write(f"{(RISK_BTC * pnl * 59000):.2f}")
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,17 @@
+.env
+.env.*
+*.log
+*.out
+*.json
+__pycache__/
+*env/
+*.service
+*.csv
+out_scrape/
+test_*.py
+add_port.py
+check_*.py
+fix_*.py
+clear_*.py
+get_*.py
+update_*.py

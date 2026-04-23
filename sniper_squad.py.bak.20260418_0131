@@ -1,0 +1,227 @@
+import gc
+import os
+import time
+import math
+import logging
+import json
+import fcntl
+import threading
+from collections import deque
+from datetime import datetime
+from dotenv import load_dotenv
+from binance.client import Client
+from binance import ThreadedWebsocketManager
+from binance.enums import *
+import vault_utils
+from utils import indicators as ind
+from utils.entry_filters import EntryFilters
+from utils.exit_strategy import ExitManager
+from utils.risk_engine import RiskManager
+
+# --- CONFIGURATION ---
+CONFIG = {
+    "SYMBOLS": ["SOLEUR", "DOGEEUR", "BNBEUR", "AVAXEUR", "LINKEUR", "PEPEEUR", "ETHEUR", "DOTEUR"],
+    "MAX_TRADE_EUR": 1000.0,
+    "MAX_CONCURRENT_TRADES": 6,
+    "TARGET_PERCENT": 0.04,
+    "TARGET_FIXED_EUR": 100.0,
+    "RSI_BUY_MIN": 30,
+    "RSI_BUY_MAX": 85,
+    "RSI_OVERSOLD": 30,
+    "ATR_TP_MULT": 2.0,
+    "ATR_SL_MULT": 3.0,
+    "TP_TRAILING_FACTOR": 0.999,
+    "VAULT_PERCENT": 0.33,
+    "MIN_TRADE_EUR": 15.0,
+    "LOG_FILE": "/home/sergio/denaro/sniper_squad.log",
+    "POSITIONS_FILE": "/home/sergio/denaro/positions_state.json",
+    "MISSION_FILE": "/home/sergio/denaro/daily_mission.json",
+}
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.FileHandler(CONFIG["LOG_FILE"]), logging.StreamHandler()]
+)
+logger = logging.getLogger("Sniper")
+risk_manager = RiskManager()
+exit_manager = ExitManager(trailing_stop_pct=0.5, activation_threshold=1.0)
+
+load_dotenv('/home/sergio/denaro/.env')
+API_KEY = os.getenv('BINANCE_API_KEY')
+API_SECRET = os.getenv('BINANCE_API_SECRET')
+
+if not API_KEY or not API_SECRET:
+    logger.critical("API Credentials missing!")
+    exit(1)
+
+try:
+    client = Client(API_KEY, API_SECRET)
+except Exception as e:
+    logger.critical(f"Failed to connect to Binance: {e}")
+    exit(1)
+
+klines = {s: deque(maxlen=200) for s in CONFIG["SYMBOLS"]}
+volumes = {s: deque(maxlen=200) for s in CONFIG["SYMBOLS"]}
+positions = {}
+balance_cache = {'EUR': 0.0}
+
+# --- BALANCE CACHE THREAD ---
+def update_balances_loop():
+    global balance_cache
+    while True:
+        try:
+            bal = client.get_asset_balance(asset='EUR')
+            balance_cache['EUR'] = float(bal['free'])
+        except Exception as e:
+            logger.error(f"Balance cache update error: {e}")
+        time.sleep(10)
+
+# --- STATE PERSISTENCE ---
+def save_positions():
+    try:
+        with open(CONFIG["POSITIONS_FILE"], 'w') as f:
+            json.dump(positions, f, indent=4)
+    except Exception as e:
+        logger.error(f"Error saving positions state: {e}")
+
+def load_positions():
+    global positions
+    try:
+        if os.path.exists(CONFIG["POSITIONS_FILE"]):
+            with open(CONFIG["POSITIONS_FILE"], 'r') as f:
+                positions = json.load(f)
+            logger.info(f"✅ Loaded {len(positions)} positions from state file.")
+    except Exception as e:
+        logger.error(f"Error loading positions state: {e}")
+        positions = {}
+
+# --- VAULT UTILS (LOCKED) ---
+def get_vault_locked():
+    return vault_utils.read_vault().get("LOCKED_EUR", 0.0)
+
+def add_to_vault(amount):
+    current = vault_utils.read_vault()
+    locked = current.get("LOCKED_EUR", 0.0) + amount
+    vault_utils.write_vault({"LOCKED_EUR": locked})
+    logger.info(f"🔐 Added {amount:.2f}€ to Vault. Total Protected: {locked:.2f}€")
+
+# --- MISSION LOGIC ---
+def get_daily_mission():
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    try:
+        if os.path.exists(CONFIG["MISSION_FILE"]):
+            with open(CONFIG["MISSION_FILE"], 'r') as f:
+                mission = json.load(f)
+            if mission.get("date") == today_str: return mission
+    except Exception as e:
+        logger.error(f"Error reading mission: {e}")
+    
+    try:
+        available_eur = balance_cache['EUR']
+    except Exception as e:
+        available_eur = 0.0
+        
+    usable_eur = max(0, available_eur - get_vault_locked())
+    new_mission = {"date": today_str, "start_capital": usable_eur, "target_eur": CONFIG["TARGET_FIXED_EUR"], "profit_today": 0.0, "achieved": False}
+    
+    try:
+        with open(CONFIG["MISSION_FILE"], 'w') as f:
+            json.dump(new_mission, f)
+    except Exception as e:
+        logger.error(f"Error saving new mission: {e}")
+    return new_mission
+
+def update_daily_mission(pnl_amount):
+    mission = get_daily_mission()
+    mission["profit_today"] += pnl_amount
+    if mission["profit_today"] >= mission["target_eur"] and not mission["achieved"]:
+        mission["achieved"] = True
+        logger.info(f"🎉 Daily Goal Reached!")
+    try:
+        with open(CONFIG["MISSION_FILE"], 'w') as f:
+            json.dump(mission, f)
+    except Exception as e:
+        logger.error(f"Error updating mission: {e}")
+    return mission
+
+# --- HELPER FUNCTIONS ---
+def get_btc_trend():
+    """BTC Correlation Filter: Returns BEARISH if EMA(9) < EMA(21)"""
+    try:
+        klines_data = client.get_klines(symbol='BTCEUR', interval='1m', limit=30)
+        closes = [float(k[4]) for k in klines_data]
+        ema9 = ind.calculate_ema(closes, 9)
+        ema21 = ind.calculate_ema(closes, 21)
+        return 'BEARISH' if ema9 < ema21 else 'BULLISH'
+    except Exception as e:
+        logger.error(f"Error checking BTC trend: {e}")
+        return 'UNKNOWN'
+
+def get_step_size(symbol):
+    try:
+        info = client.get_symbol_info(symbol)
+        for f in info['filters']:
+            if f['filterType'] == 'LOT_SIZE': return float(f['stepSize'])
+    except: pass
+    return 1.0
+
+def round_step(quantity, step_size):
+    if step_size == 0: return quantity
+    precision = int(round(-math.log10(step_size), 0))
+    return round(quantity - (quantity % step_size), precision)
+
+def init_historical_data():
+    for sym in CONFIG["SYMBOLS"]:
+        try:
+            hist = client.get_klines(symbol=sym, interval='1m', limit=100)
+            for k in hist:
+                klines[sym].append(float(k[4]))
+                volumes[sym].append(float(k[5]))
+        except Exception as e:
+            logger.error(f"Error loading history for {sym}: {e}")
+
+
+
+# --- WEBSOCKET MESSAGE HANDLER ---
+def process_socket_msg(msg):
+    if 'data' not in msg or 'e' not in msg['data']: return
+    event = msg['data']
+    if event['e'] == 'kline':
+        symbol = event['s']
+        price = float(event['k']['c'])
+        is_closed = event['k']['x']
+        volume = float(event['k']['v'])
+        
+        # Aggiorna klines e volumes
+        if symbol in klines:
+            klines[symbol].append(price)
+        if symbol in volumes:
+            volumes[symbol].append(volume)
+        
+        if is_closed:
+            logger.debug(f"[{symbol}] Price: {price}, Vol: {volume}")
+
+def main():
+    logger.info("⚡ SNIPER SQUAD (V3 - Standardized TA & Low Latency) avviata")
+    
+    # Start Balance Cache Thread
+    b_thread = threading.Thread(target=update_balances_loop, daemon=True)
+    b_thread.start()
+    
+    load_positions()
+    init_historical_data()
+    twm = ThreadedWebsocketManager(api_key=API_KEY, api_secret=API_SECRET)
+    twm.start()
+    streams = [f"{s.lower()}@kline_1m" for s in CONFIG["SYMBOLS"]]
+    twm.start_multiplex_socket(callback=process_socket_msg, streams=streams)
+    try:
+        while True:
+            time.sleep(60)
+            gc.collect()
+    except KeyboardInterrupt:
+        twm.stop()
+
+
+if __name__ == "__main__":
+    main()

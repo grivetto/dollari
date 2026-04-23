@@ -1,0 +1,269 @@
+import gc
+import os, time, math, logging, gc, json
+from collections import deque
+from dotenv import load_dotenv
+from binance.client import Client
+from binance import ThreadedWebsocketManager
+from binance.enums import *
+from datetime import datetime
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s',
+                    handlers=[logging.FileHandler("/home/sergio/denaro/sniper_squad.log"), logging.StreamHandler()])
+logger = logging.getLogger("Sniper")
+
+load_dotenv('/home/sergio/denaro/.env')
+API_KEY = os.getenv('BINANCE_API_KEY')
+API_SECRET = os.getenv('BINANCE_API_SECRET')
+client = Client(API_KEY, API_SECRET)
+
+SYMBOLS = ["SOLEUR", "DOGEEUR", "BNBEUR", "AVAXEUR", "LINKEUR", "PEPEEUR", "ETHEUR", "DOTEUR"]
+MAX_TRADE_EUR = 1000.0  
+MAX_CONCURRENT_TRADES = 6
+
+VAULT_FILE = "/home/sergio/denaro/vault.json"
+MISSION_FILE = "/home/sergio/denaro/daily_mission.json"
+
+# Filosofia Compound: x% al giorno di target.
+TARGET_PERCENT = 0.04
+TARGET_FIXED_EUR = 100.0  # Se > 0, usa questo invece della percentuale
+
+def get_vault_locked():
+    try:
+        if os.path.exists(VAULT_FILE):
+            with open(VAULT_FILE, 'r') as f:
+                return float(json.load(f).get("LOCKED_EUR", 0.0))
+    except Exception: pass
+    return 0.0
+
+def add_to_vault(amount):
+    locked = get_vault_locked() + amount
+    try:
+        with open(VAULT_FILE, 'w') as f:
+            json.dump({"LOCKED_EUR": locked}, f)
+        logger.info(f"🔐 Aggiunti {amount:.2f}€ in Cassaforte. Totale Protetto: {locked:.2f}€ (33% Intoccabile)")
+    except Exception as e:
+        logger.error(f"Errore vault: {e}")
+
+def get_daily_mission():
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    
+    # Prova a leggere la missione
+    try:
+        if os.path.exists(MISSION_FILE):
+            with open(MISSION_FILE, 'r') as f:
+                mission = json.load(f)
+            
+            # Se è lo stesso giorno, ritorna la missione corrente
+            if mission.get("date") == today_str:
+                return mission
+    except Exception: pass
+    
+    # RESET DI MEZZANOTTE / CREAZIONE NUOVA MISSIONE
+    try:
+        available_eur = float(client.get_asset_balance(asset='EUR')['free'])
+    except:
+        available_eur = 0.0
+        
+    usable_eur = available_eur - get_vault_locked()
+    if usable_eur < 0: usable_eur = 0
+    
+    # L'interesse composto calcola il nuovo target sul capitale libero aggiornato
+    target_eur = 100.0  # OBIETTIVO FISSO A 100€ DA MEZZANOTTE
+    
+    new_mission = {
+        "date": today_str,
+        "start_capital": usable_eur,
+        "target_eur": target_eur,
+        "profit_today": 0.0,
+        "achieved": False
+    }
+    
+    try:
+        with open(MISSION_FILE, 'w') as f:
+            json.dump(new_mission, f)
+        logger.info(f"🕛 RESET DI MEZZANOTTE ESEGUITO. Nuovo Target [{TARGET_PERCENT*100}%]: {target_eur:.2f}€")
+    except: pass
+    
+    return new_mission
+
+def update_daily_mission(pnl_amount):
+    mission = get_daily_mission()
+    mission["profit_today"] += pnl_amount
+    
+    if mission["profit_today"] >= mission["target_eur"] and not mission["achieved"]:
+        mission["achieved"] = True
+        logger.info(f"🎉 OBIETTIVO GIORNALIERO RAGGIUNTO! ({mission['target_eur']:.2f}€). La squadra si riposa fino a mezzanotte.")
+        
+    try:
+        with open(MISSION_FILE, 'w') as f:
+            json.dump(mission, f)
+    except: pass
+    return mission
+
+klines = {s: deque(maxlen=20) for s in SYMBOLS}
+positions = {}
+
+def calc_ema(prices, period=9):
+    if len(prices) < period: return prices[-1] if prices else 0
+    k = 2 / (period + 1)
+    ema = prices[0]
+    for p in list(prices)[1:]:
+        ema = (p * k) + (ema * (1 - k))
+    return ema
+
+def calc_rsi(prices, period=14):
+    prices = list(prices)
+    if len(prices) <= period: return 50.0
+    gains, losses = 0.0, 0.0
+    for i in range(1, period + 1):
+        change = prices[i] - prices[i - 1]
+        if change > 0: gains += change
+        else: losses -= change
+    if losses == 0: return 100.0
+    rs = (gains / period) / (losses / period)
+    return 100.0 - (100.0 / (1.0 + rs))
+
+def get_step_size(symbol):
+    try:
+        info = client.get_symbol_info(symbol)
+        for f in info['filters']:
+            if f['filterType'] == 'LOT_SIZE':
+                return float(f['stepSize'])
+    except: pass
+    return 1.0
+
+def round_step(quantity, step_size):
+    precision = int(round(-math.log10(step_size), 0))
+    return round(quantity - (quantity % step_size), precision)
+
+def init_historical_data():
+    for sym in SYMBOLS:
+        try:
+            hist = client.get_klines(symbol=sym, interval='1m', limit=20)
+            for k in hist: klines[sym].append(float(k[4]))
+        except Exception as e:
+            pass
+    logger.info("✅ Storico caricato (Zero overhead RAM/CPU).")
+
+def recover_positions():
+    for sym in SYMBOLS:
+        asset = sym.replace('EUR', '')
+        try:
+            qty = float(client.get_asset_balance(asset=asset)['free'])
+            ticker = client.get_symbol_ticker(symbol=sym)
+            price = float(ticker['price'])
+            if qty * price > 10.0:
+                positions[sym] = {'entry': price, 'qty': qty, 'highest': price}
+                logger.info(f"🔄 Posizione recuperata dal saldo: {sym} (Qty: {qty}, Val: ~{qty*price:.2f}€)")
+        except Exception: pass
+
+def process_socket_msg(msg):
+    if 'data' not in msg or 'e' not in msg['data']: return
+    event = msg['data']
+    
+    # Controlla la missione giornaliera
+    mission = get_daily_mission()
+    if mission["achieved"]:
+        # Fermo fino a mezzanotte (o vende se ha posizioni in forte profitto)
+        # Permettiamo le chiusure ma non i nuovi acquisti
+        pass
+        
+    if event['e'] == 'kline':
+        k, symbol = event['k'], event['s']
+        price, is_closed = float(k['c']), k['x']
+        
+        if symbol in positions:
+            entry = positions[symbol]['entry']
+            qty = positions[symbol]['qty']
+            highest = max(positions[symbol].get('highest', entry), price)
+            positions[symbol]['highest'] = highest
+            
+            pnl = (price - entry) / entry
+            take_profit = pnl > 0.0015 or (pnl > 0.0008 and price < highest * 0.999)
+            stop_loss = pnl <= -0.10  # MAXIMUM DRAWDOWN 10%
+            
+            if take_profit or stop_loss:
+                reason = "PROFIT" if take_profit else "STOP"
+                try:
+                    asset = symbol.replace('EUR', '')
+                    actual_qty = float(client.get_asset_balance(asset=asset)['free'])
+                    step = get_step_size(symbol)
+                    sell_qty = round_step(actual_qty, step)
+                    client.create_order(symbol=symbol, side='SELL', type='MARKET', quantity=sell_qty)
+                    
+                    real_pnl = (price - entry) * qty
+                    mission = update_daily_mission(real_pnl)
+                    
+                    logger.info(f"⚡ {reason} {symbol} | Gain: {real_pnl:+.2f}€ | Progress: {mission['profit_today']:.2f}€ / {mission['target_eur']:.2f}€")
+                    
+                    if real_pnl > 0:
+                        add_to_vault(real_pnl * 0.33)
+                        
+                    del positions[symbol]
+                    
+                    if mission["achieved"]:
+                        # Esce ma non crasha, lascerà le socket attive fino al giorno dopo
+                        pass
+                except Exception as e:
+                    pass
+
+        if is_closed:
+            klines[symbol].append(price)
+            if len(klines[symbol]) >= 15:
+                rsi = calc_rsi(klines[symbol], 14)
+                ema = calc_ema(klines[symbol], 9)
+                
+                momentum_buy = price > ema * 0.999 and 45 < rsi < 85
+                oversold_bounce = rsi < 45
+                
+                # Se la missione è già raggiunta, non si entra più per oggi
+                if mission["achieved"]: return
+                
+                if (momentum_buy or oversold_bounce) and symbol not in positions and len(positions) < MAX_CONCURRENT_TRADES:
+                    try:
+                        available_eur = float(client.get_asset_balance(asset='EUR')['free'])
+                        locked_eur = get_vault_locked()
+                        usable_eur = available_eur - locked_eur
+                        trade_amount = min(MAX_TRADE_EUR, usable_eur)
+                        
+                        if trade_amount < 15.0: return
+                        step = get_step_size(symbol)
+                        qty = round_step(trade_amount / price, step)
+                        
+                        logger.info(f"🚀 BUY {symbol} | Prezzo: {price} | RSI: {rsi:.1f}")
+                        order = client.create_order(symbol=symbol, side='BUY', type='MARKET', quantity=qty)
+                        
+                        executed_qty = sum([float(f['qty']) for f in order['fills']])
+                        avg_price = sum([float(f['price']) * float(f['qty']) for f in order['fills']]) / executed_qty if executed_qty > 0 else price
+                        
+                        positions[symbol] = {'entry': avg_price, 'qty': executed_qty, 'highest': avg_price}
+                    except Exception as e: pass
+
+def main():
+    logger.info("⚡ SNIPER SQUAD (Interesse Composto + Reset Mezzanotte) avviata")
+    
+    # Forza controllo/creazione missione al boot
+    m = get_daily_mission()
+    logger.info(f"📅 Target di oggi: {m['target_eur']:.2f}€. Profitto attuale: {m['profit_today']:.2f}€")
+    
+    init_historical_data()
+    recover_positions()
+    
+    twm = ThreadedWebsocketManager(api_key=API_KEY, api_secret=API_SECRET)
+    twm.start()
+    
+    streams = [f"{s.lower()}@kline_1m" for s in SYMBOLS]
+    twm.start_multiplex_socket(callback=process_socket_msg, streams=streams)
+    
+    try:
+        while True:
+            # Periodicamente, controlla se è cambiata la mezzanotte (cambiando giorno)
+            get_daily_mission()
+            time.sleep(60)
+            logger.info("💗 Heartbeat OK. Memoria pulita.")
+            gc.collect()
+    except KeyboardInterrupt:
+        twm.stop()
+
+if __name__ == "__main__":
+    main()

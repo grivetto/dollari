@@ -1,0 +1,53 @@
+
+import logging
+from datetime import datetime
+import os
+
+logger = logging.getLogger("RiskEngine")
+
+class RiskManager:
+    def __init__(self, max_daily_loss_pct=-3.0, default_pos_size_pct=2.0):
+        """
+        Sitema di gestione del rischio per i bot Denaro.
+        :param max_daily_loss_pct: Percentuale di perdita massima giornaliera prima del blocco.
+        :param default_pos_size_pct: Percentuale di capitale da rischiare per singolo trade.
+        """
+        self.max_daily_loss_pct = max_daily_loss_pct
+        self.default_pos_size_pct = default_pos_size_pct
+
+    def calculate_size(self, total_balance, volatility=1.0):
+        """
+        Calcola la dimensione della posizione in EUR basandosi sul capitale e sulla volatilità.
+        Inversamente proporzionale alla volatilità: più è alta, più l'ordine è piccolo.
+        """
+        if total_balance <= 0:
+            return 0.0
+        
+        # Base size: % del capitale
+        base_size = total_balance * (self.default_pos_size_pct / 100)
+        
+        # Volatility adjustment (clamped between 0.5x and 2x of base size)
+        vol_adj = 1.0 / max(volatility, 0.1)
+        adjusted_size = base_size * vol_adj
+        
+        # Cap the size to avoid over-exposure (max 5% of total balance per trade)
+        final_size = min(adjusted_size, total_balance * 0.05)
+        
+        return round(final_size, 2)
+
+    def check_daily_loss(self, current_pnl_pct):
+        """
+        Verifica se il limite di perdita giornaliera è stato superato.
+        :param current_pnl_pct: PnL giornaliero in percentuale.
+        :return: True se il trading è permesso, False se deve essere bloccato.
+        """
+        if current_pnl_pct <= self.max_daily_loss_pct:
+            logger.warning(f"🚨 CIRCUIT BREAKER: Daily loss limit reached ({current_pnl_pct}%). Trading HALTED.")
+            return False
+        return True
+
+    def get_risk_level(self, volatility):
+        """Ritorna il livello di rischio basato sulla volatilità"""
+        if volatility > 0.05: return "HIGH"
+        if volatility > 0.02: return "MEDIUM"
+        return "LOW"

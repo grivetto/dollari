@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🔱 Stella Fleet - Trade History (6h)</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a0e17; color: #e0e0e0; font-family: 'Segoe UI', monospace; }
+.header { background: linear-gradient(135deg, #1a1f2e 0%, #0d1117 100%); padding: 20px; text-align: center; border-bottom: 2px solid #30363d; }
+.header h1 { color: #58a6ff; font-size: 1.8em; }
+.header .sub { color: #8b949e; font-size: 0.9em; margin-top: 5px; }
+.stats { display: flex; justify-content: center; gap: 20px; padding: 15px; flex-wrap: wrap; }
+.stat-card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 15px 25px; text-align: center; min-width: 140px; }
+.stat-card .num { font-size: 2em; font-weight: bold; }
+.stat-card .label { color: #8b949e; font-size: 0.8em; margin-top: 3px; }
+.green { color: #3fb950; }
+.red { color: #f85149; }
+.yellow { color: #d29922; }
+.blue { color: #58a6ff; }
+.purple { color: #bc8cff; }
+.filters { padding: 10px 20px; text-align: center; }
+.filters button { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; padding: 8px 16px; margin: 3px; border-radius: 6px; cursor: pointer; font-size: 0.85em; }
+.filters button:hover, .filters button.active { background: #388bfd; border-color: #388bfd; color: #fff; }
+.table-wrap { padding: 10px 20px; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
+th { background: #161b22; color: #58a6ff; padding: 10px 8px; text-align: left; border-bottom: 2px solid #30363d; position: sticky; top: 0; }
+td { padding: 8px; border-bottom: 1px solid #21262d; }
+tr:hover { background: #161b22; }
+tr.sell td { color: #f85149; }
+tr.buy td { color: #3fb950; }
+tr.signal td { color: #d29922; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75em; font-weight: bold; }
+.badge-buy { background: rgba(63,185,80,0.15); color: #3fb950; }
+.badge-sell { background: rgba(248,81,73,0.15); color: #f85149; }
+.badge-signal { background: rgba(210,153,34,0.15); color: #d29922; }
+.nav { padding: 10px 20px; }
+.nav a { color: #58a6ff; text-decoration: none; margin-right: 15px; }
+.nav a:hover { text-decoration: underline; }
+#lastUpdate { color: #8b949e; font-size: 0.8em; padding: 5px 20px; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>🔱 Stella Fleet — Trade History</h1>
+  <div class="sub">Ultime 6 ore di attività | Auto-refresh ogni 30s</div>
+</div>
+<div class="nav">
+  <a href="/">📊 Dashboard Principale</a>
+  <a href="/trades">📜 Trade History</a>
+</div>
+<div class="stats" id="statsBar"></div>
+<div class="filters" id="filterBar"></div>
+<div id="lastUpdate"></div>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th>⏰ Ora</th><th>🤖 Bot</th><th>📍 Side</th><th>💱 Pair</th><th>📦 Qty</th><th>💰 Price</th><th>📈 Profit/Spread</th></tr>
+    </thead>
+    <tbody id="tradeBody"></tbody>
+  </table>
+</div>
+<script>
+let allTrades = [];
+let currentFilter = 'all';
+
+function render(trades) {
+  const body = document.getElementById('tradeBody');
+  body.innerHTML = trades.map(t => {
+    const cls = t.side === 'SELL' ? 'sell' : t.side === 'BUY' ? 'buy' : 'signal';
+    const badge = t.side === 'SELL' ? 'badge-sell' : t.side === 'BUY' ? 'badge-buy' : 'badge-signal';
+    return `<tr class="${cls}">
+      <td>${t.time}</td>
+      <td>${t.bot}</td>
+      <td><span class="badge ${badge}">${t.side}</span></td>
+      <td>${t.pair}</td>
+      <td>${t.qty}</td>
+      <td>${t.price}</td>
+      <td>${t.profit || '-'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function setFilter(f) {
+  currentFilter = f;
+  document.querySelectorAll('.filters button').forEach(b => b.classList.remove('active'));
+  document.querySelector(`[data-filter="${f}"]`).classList.add('active');
+  if (f === 'all') render(allTrades);
+  else if (f === 'sol_scalper') render(allTrades.filter(t => t.bot === 'sol_scalper'));
+  else if (f === 'whale') render(allTrades.filter(t => t.bot === 'whale_monitor'));
+  else if (f === 'arb') render(allTrades.filter(t => t.bot === 'arbitrage_sentinel'));
+  else if (f === 'buy') render(allTrades.filter(t => t.side === 'BUY'));
+  else if (f === 'sell') render(allTrades.filter(t => t.side === 'SELL'));
+}
+
+async function load() {
+  try {
+    const r = await fetch('/trades_6h.json?t=' + Date.now());
+    const d = await r.json();
+    allTrades = d.trades;
+    const s = d.stats;
+    document.getElementById('statsBar').innerHTML = `
+      <div class="stat-card"><div class="num blue">${s.total}</div><div class="label">Totale Eventi</div></div>
+      <div class="stat-card"><div class="num green">${s.sol_profits}</div><div class="label">SOL Scalper Trades</div></div>
+      <div class="stat-card"><div class="num green">${s.whale_buys}</div><div class="label">🐋 Whale BUY</div></div>
+      <div class="stat-card"><div class="num red">${s.whale_sells}</div><div class="label">🐋 Whale SELL</div></div>
+      <div class="stat-card"><div class="num yellow">${s.arb_signals}</div><div class="label">💎 Arb Signals</div></div>
+    `;
+    document.getElementById('filterBar').innerHTML = `
+      <button data-filter="all" onclick="setFilter('all')" class="active">Tutti</button>
+      <button data-filter="sol_scalper" onclick="setFilter('sol_scalper')">🌊 SOL Scalper</button>
+      <button data-filter="whale" onclick="setFilter('whale')">🐋 Whale Monitor</button>
+      <button data-filter="arb" onclick="setFilter('arb')">💎 Arbitraggio</button>
+      <button data-filter="buy" onclick="setFilter('buy')">🟢 BUY</button>
+      <button data-filter="sell" onclick="setFilter('sell')">🔴 SELL</button>
+    `;
+    document.getElementById('lastUpdate').textContent = `Ultimo aggiornamento: ${d.generated}`;
+    setFilter(currentFilter);
+  } catch(e) { console.error(e); }
+}
+
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>

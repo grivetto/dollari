@@ -1,0 +1,22 @@
+2026-03-28 18:07:26,228 - [NIGHT PROTOCOL 🧹] - ===================================================
+2026-03-28 18:07:26,228 - [NIGHT PROTOCOL 🧹] - 🌑 INIZIO PROTOCOLLO DI CHIUSURA (MIDNIGHT SWEEPER)
+2026-03-28 18:07:26,229 - [NIGHT PROTOCOL 🧹] - ===================================================
+2026-03-28 18:07:26,229 - [NIGHT PROTOCOL 🧹] - ⚔️ 1. LIQUIDAZIONE TATTICA (FLAT-OUT INTRADAY).
+2026-03-28 18:07:26,229 - [NIGHT PROTOCOL 🧹] - Chiusura forzata di tutti i trade speculativi prima della notte asiatica...
+2026-03-28 18:07:29,681 - [NIGHT PROTOCOL 🧹] - Errore cancellazione ordini Binance: binance fetchOpenOrders() WARNING: fetching open orders without specifying a symbol has stricter rate limits(10 times more for spot, 40 times more for other markets) compared to requesting with symbol argument. To acknowledge self warning, set binance.options["warnOnFetchOpenOrdersWithoutSymbol"] = False to suppress self warning message.
+2026-03-28 18:07:29,682 - [NIGHT PROTOCOL 🧹] - Binance Spot: Operazioni di micro-scalping annullate. Il portafoglio storico e' protetto dall'Hedger, non lo liquidiamo.
+2026-03-28 18:07:33,096 - [NIGHT PROTOCOL 🧹] - 🏦 Ignorata posizione FUN/USDT:USDT short (Appartiene a Funding Arbitrage).
+2026-03-28 18:07:33,097 - [NIGHT PROTOCOL 🧹] - 🛡️ Ignorata posizione BTC/USDT:USDT short (Appartiene a Delta Neutral Hedger).
+2026-03-28 18:07:33,097 - [NIGHT PROTOCOL 🧹] - 💰 2. CALCOLO PROFITTI E SIGILLO CASSAFORTE (REGOLA DEL 33%).
+2026-03-28 18:07:33,098 - [NIGHT PROTOCOL 🧹] - Nessun profitto netto da sigillare oggi. Cassaforte intatta a 112.67 EUR.
+2026-03-28 18:07:33,098 - [NIGHT PROTOCOL 🧹] - 🗃️ 3. BACKUP CODICE (GIT PUSH).
+[work_in_progress abc27f9] chore(Nightly): Auto-sync end of day 2026-03-28
+ 1 file changed, 12 insertions(+)
+ create mode 100644 out_sweep.txt
+To github.com:grivetto/denaro.git
+   f76f0d8..abc27f9  work_in_progress -> work_in_progress
+2026-03-28 18:07:34,982 - [NIGHT PROTOCOL 🧹] - ✅ Codice salvato e sincronizzato sul Cloud GitHub.
+2026-03-28 18:07:34,982 - [NIGHT PROTOCOL 🧹] - 📡 4. CHECK INFRASTRUTTURA E TELEMETRIA.
+2026-03-28 18:07:35,136 - [NIGHT PROTOCOL 🧹] - ✅ Dashboard Web Cyberpunk: ONLINE (200 OK)
+2026-03-28 18:07:35,256 - [NIGHT PROTOCOL 🧹] - ❌ Zabbix Watchdog: ASSENTE.
+2026-03-28 18:07:35,256 - [NIGHT PROTOCOL 🧹] - 🌙 PROTOCOLLO NOTTURNO COMPLETATO. Tutti i sistemi sono blindati fino all'alba.

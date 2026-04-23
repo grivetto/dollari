@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  legion-manager:
+    build: .
+    container_name: legion-manager-prod
+    restart: always
+    env_file: .env
+    volumes:
+      - /home/sergio/denaro:/app
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10mb"
+        max-file: "3"

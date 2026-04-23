@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ORBITAL COMMAND - NEON SQUAD</title>
+    <style>
+        :root {
+            --cyan: #00f3ff;
+            --pink: #ff00ea;
+            --green: #39ff14;
+            --red: #ff003c;
+            --yellow: #fcd535;
+            --dark: #090a0f;
+            --panel: rgba(16, 18, 27, 0.85);
+            --panel-border: #1f2533;
+        }
+
+        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+
+        * { box-sizing: border-box; }
+
+        body { 
+            font-family: 'Share Tech Mono', monospace;
+            background-color: var(--dark); 
+            background-image: 
+                radial-gradient(circle at 50% 50%, rgba(0, 243, 255, 0.05) 0%, transparent 60%),
+                linear-gradient(rgba(0, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 100% 100%, 30px 30px, 30px 30px;
+            color: #fff; 
+            margin: 0; 
+            padding: 15px; 
+            overflow-x: hidden;
+        }
+
+        /* Scanline Overlay */
+        body::after {
+            content: "";
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+            background-size: 100% 4px;
+            z-index: 9999;
+            pointer-events: none;
+            opacity: 0.6;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 350px 1fr 300px;
+            gap: 20px;
+            max-width: 1800px;
+            margin: 0 auto;
+        }
+
+        /* Glitch Header */
+        .header { 
+            grid-column: 1 / -1;
+            display: flex; 
+            justify-content: space-between; 
+            align-items: flex-end; 
+            border-bottom: 2px solid var(--cyan); 
+            padding-bottom: 10px; 
+            margin-bottom: 10px; 
+            position: relative;
+        }
+
+        .header::after {
+            content: '';
+            position: absolute;
+            bottom: -6px; left: 0;
+            width: 150px; height: 2px;
+            background: var(--pink);
+            box-shadow: 0 0 10px var(--pink);
+        }
+
+        .title { 
+            font-size: 38px; 
+            color: var(--cyan); 
+            letter-spacing: 4px;
+            text-shadow: 0 0 10px var(--cyan);
+            margin: 0;
+        }
+        
+        .title span { color: var(--pink); text-shadow: 0 0 10px var(--pink); }
+
+        .system-clock {
+            font-size: 24px;
+            color: var(--yellow);
+            text-shadow: 0 0 10px var(--yellow);
+            border: 1px solid var(--yellow);
+            padding: 5px 15px;
+            background: rgba(252, 213, 53, 0.1);
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--panel-border);
+            padding: 15px;
+            position: relative;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+
+        .panel::before {
+            content: ''; position: absolute; top: 0; left: 0; width: 10px; height: 10px;
+            border-top: 2px solid var(--cyan); border-left: 2px solid var(--cyan);
+        }
+        .panel::after {
+            content: ''; position: absolute; bottom: 0; right: 0; width: 10px; height: 10px;
+            border-bottom: 2px solid var(--cyan); border-right: 2px solid var(--cyan);
+        }
+
+        .panel-title {
+            color: #aaa;
+            font-size: 12px;
+            letter-spacing: 2px;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            border-bottom: 1px dashed #333;
+            padding-bottom: 5px;
+        }
+
+        /* Top Stats Row */
+        .top-stats {
+            grid-column: 1 / -1;
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 20px;
+            margin-bottom: 5px;
+        }
+
+        .stat-box {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: linear-gradient(180deg, rgba(0, 243, 255, 0.05) 0%, transparent 100%);
+            border-top: 2px solid var(--cyan);
+        }
+
+        .stat-box.vault { border-top-color: var(--yellow); background: linear-gradient(180deg, rgba(252, 213, 53, 0.05) 0%, transparent 100%); }
+        .stat-box.profit { border-top-color: var(--green); background: linear-gradient(180deg, rgba(57, 255, 20, 0.05) 0%, transparent 100%); }
+
+        .stat-val { font-size: 32px; font-weight: bold; margin-bottom: 5px; text-shadow: 0 0 10px currentColor; }
+        .stat-val.cyan { color: var(--cyan); }
+        .stat-val.yellow { color: var(--yellow); }
+        .stat-val.green { color: var(--green); }
+        .stat-val.pink { color: var(--pink); }
+        .stat-label { font-size: 11px; color: #888; letter-spacing: 1px; }
+
+        /* Left Column: Fleet Status */
+        .fleet-list { display: flex; flex-direction: column; gap: 10px; }
+        
+        .fleet-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px; background: rgba(0,0,0,0.4); border-left: 3px solid #333;
+            transition: all 0.3s ease;
+        }
+        .fleet-item.online { border-left-color: var(--green); background: linear-gradient(90deg, rgba(57, 255, 20, 0.1) 0%, transparent 100%); }
+        .fleet-item.vault { border-left-color: var(--yellow); }
+        
+        .bot-name { font-size: 14px; color: #fff; }
+        .bot-ping { font-size: 10px; color: #666; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #333; box-shadow: 0 0 5px #000; }
+        .status-dot.online { background: var(--green); box-shadow: 0 0 8px var(--green); animation: blink 2s infinite; }
+
+        /* Middle Column: Market Radar & Chart */
+        
+        .market-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .zabbix-table {
+            width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 20px;
+            background: rgba(0,0,0,0.5); border: 1px solid var(--panel-border);
+        }
+        .zabbix-table th, .zabbix-table td {
+            border: 1px solid var(--panel-border); padding: 8px; text-align: left;
+        }
+        .zabbix-table th { background: rgba(0, 243, 255, 0.1); color: var(--cyan); }
+        .zabbix-table tr:hover { background: rgba(255,255,255,0.05); }
+        .alert-red { color: var(--red); font-weight: bold; }
+        .alert-yellow { color: var(--yellow); }
+        .alert-green { color: var(--green); }
+        
+        .zabbix-chart-container {
+            width: 100%; height: 150px; background: #000; border: 1px solid var(--panel-border);
+            margin-bottom: 20px; display: flex; align-items: flex-end; padding: 10px; gap: 2px;
+        }
+        .bar-col { flex: 1; background: var(--cyan); opacity: 0.8; transition: height 0.5s; position: relative; }
+        .bar-col:hover { opacity: 1; background: var(--pink); }
+
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .crypto-card {
+            background: rgba(0,0,0,0.5); padding: 10px; border: 1px solid #222;
+            display: flex; flex-direction: column; position: relative;
+        }
+        
+        .crypto-card.up { border-bottom: 2px solid var(--green); }
+        .crypto-card.down { border-bottom: 2px solid var(--red); }
+
+        .c-head { display: flex; justify-content: space-between; font-size: 12px; color: #888; }
+        .c-symbol { color: #fff; font-weight: bold; }
+        .c-price { font-size: 18px; margin: 8px 0; color: var(--cyan); }
+        .c-change { font-size: 12px; text-align: right; }
+        .c-change.up { color: var(--green); text-shadow: 0 0 5px var(--green); }
+        .c-change.down { color: var(--red); text-shadow: 0 0 5px var(--red); }
+
+        .chart-container {
+            width: 100%;
+            height: 300px;
+            background: #000;
+            border: 1px solid #333;
+            display: flex; align-items: center; justify-content: center;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .chart-img { width: 100%; height: 100%; object-fit: contain; }
+        .chart-overlay {
+            position: absolute; top: 10px; left: 10px; color: var(--cyan); font-size: 10px;
+            background: rgba(0,0,0,0.7); padding: 2px 5px; border: 1px solid var(--cyan);
+        }
+
+        /* Right Column: Terminal Log */
+        .terminal {
+            background: #050505;
+            border: 1px solid #222;
+            padding: 10px;
+            height: 550px;
+            overflow-y: auto;
+            font-size: 11px;
+            color: #aaa;
+            line-height: 1.4;
+        }
+        
+        .terminal::-webkit-scrollbar { width: 5px; }
+        .terminal::-webkit-scrollbar-thumb { background: var(--cyan); }
+
+        .log-line { margin-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 2px; }
+        .log-time { color: var(--cyan); margin-right: 8px; }
+        .log-info { color: #fff; }
+        .log-highlight { color: var(--yellow); }
+        .log-buy { color: var(--green); }
+        .log-sell { color: var(--pink); }
+
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+
+        .progress-bar { width: 100%; height: 4px; background: #222; margin-top: 10px; border-radius: 2px; overflow: hidden; }
+        .progress-fill { height: 100%; background: var(--cyan); width: 0%; box-shadow: 0 0 10px var(--cyan); transition: width 1s; }
+
+        @media (max-width: 1200px) {
+            .layout { grid-template-columns: 1fr; }
+            .terminal { height: 300px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1 class="title">ORBITAL <span>COMMAND</span></h1>
+        <div class="system-clock" id="sys-clock">00:00:00 UTC</div>
+    </div>
+
+    <div class="layout">
+        <!-- TOP STATS -->
+        
+        <!-- ZABBIX MONITOR -->
+        <div class="panel" style="grid-column: 1 / -1;">
+            <div class="panel-title">CHARLIE.INFRASTRUCTURE_MONITOR_ [PID/CPU/RAM]</div>
+            
+            <div class="zabbix-chart-container" id="zabbix-chart" title="Total CPU/RAM Usage History">
+                <!-- Bars injected here -->
+            </div>
+            
+            <table class="zabbix-table" id="zabbix-table">
+                <thead>
+                    <tr>
+                        <th>BOT NODE</th>
+                        <th>STATUS</th>
+                        <th>PID</th>
+                        <th>CPU %</th>
+                        <th>RAM %</th>
+                        <th>LAST LOG PING</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Rows injected here -->
+                </tbody>
+            </table>
+        </div>
+
+        
+        <div class="top-stats">
+            <div class="panel stat-box">
+                <div class="stat-val cyan" id="stat-target">10.00€</div>
+                <div class="stat-label">SQUADRA ALPHA (Binance Spot)</div>
+                <div class="progress-bar"><div class="progress-fill" id="target-progress"></div></div>
+            </div>
+            
+            <div class="panel stat-box profit">
+                <div class="stat-val green" id="stat-mexc">0.00$</div>
+                <div class="stat-label">SQUADRA BETA (MEXC Spot)</div>
+            </div>
+            
+            <div class="panel stat-box profit">
+                <div class="stat-val cyan" id="stat-bitget">0.00$</div>
+                <div class="stat-label">SQUADRA GAMMA (Bitget Futures)</div>
+            </div>
+
+            <div class="panel stat-box">
+                <div class="stat-val pink" id="stat-delta">--.--</div>
+                <div class="stat-label">SQUADRA DELTA (Binance HFT)</div>
+            </div>
+            
+            <div class="panel stat-box vault">
+                <div class="stat-val yellow" id="stat-vault">--.--€</div>
+                <div class="stat-label">SECURE VAULT [33% LOCK]</div>
+            </div>
+        </div>
+
+        <!-- LEFT: FLEET -->
+        <div class="panel">
+            <div class="panel-title">AI FLEET STATUS [LINKED]</div>
+            <div class="fleet-list" id="fleet-list">
+                <div class="fleet-item">
+                    <div>
+                        <div class="bot-name" style="color:#666">Loading modules...</div>
+                    </div>
+                    <div class="status-dot"></div>
+                </div>
+            </div>
+            <div style="margin-top: 20px; font-size: 10px; color: var(--cyan); text-align: center; border-top: 1px solid #333; padding-top: 10px;">
+                OOM_PREVENTION: ACTIVE | RAM_USAGE: OPTIMAL
+            </div>
+        </div>
+
+        <!-- MIDDLE: MARKET & CHART -->
+        <div class="panel">
+            <div class="panel-title">BINANCE TELEMETRY_</div>
+            <div class="market-grid" id="market-grid">
+                <div style="color:var(--cyan); font-size:12px; padding: 20px;">Establishing uplink...</div>
+            </div>
+            
+            <div class="panel-title" style="margin-top: 15px;">PROFIT TRAJECTORY_</div>
+            <div class="chart-container">
+                <div class="chart-overlay">LIVE RENDER | MATPLOTLIB ENG.</div>
+                <!-- Carica l'immagine generata dal python se esiste -->
+                <img id="profit-chart" src="/profit_chart.png" class="chart-img" alt="Trajectory Chart" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                <div style="display:none; color:#555; font-size:12px;">[CHART_DATA_UNAVAILABLE_WAIT_REFRESH]</div>
+            </div>
+        </div>
+
+        <!-- RIGHT: TERMINAL -->
+        <div class="panel">
+            <div class="panel-title">SYSTEM EVENT LOG_</div>
+            <div class="terminal" id="terminal-log">
+                <div class="log-line"><span class="log-time">SYS</span> <span class="log-info">Inizializzazione interfaccia neurale... OK.</span></div>
+                <div class="log-line"><span class="log-time">SYS</span> <span class="log-info">Attesa stream dati...</span></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Clock Update
+        setInterval(() => {
+            const d = new Date();
+            document.getElementById('sys-clock').innerText = d.toISOString().split('T')[1].split('.')[0] + ' UTC';
+        }, 1000);
+
+        async function fetchMarketData() {
+            try {
+                const symbols = ["BTCEUR", "SOLEUR", "DOTEUR", "BNBEUR", "ETHEUR", "AVAXEUR", "PEPEEUR", "DOGEEUR"];
+                const response = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbols=' + JSON.stringify(symbols));
+                const data = await response.json();
+                
+                const grid = document.getElementById('market-grid');
+                grid.innerHTML = '';
+                
+                data.forEach(t => {
+                    const price = parseFloat(t.lastPrice);
+                    const change = parseFloat(t.priceChangePercent);
+                    const up = change >= 0;
+                    
+                    let fmtPrice = price >= 100 ? price.toFixed(2) : price >= 1 ? price.toFixed(3) : price.toFixed(6);
+                    
+                    grid.innerHTML += `
+                        <div class="crypto-card ${up ? 'up' : 'down'}">
+                            <div class="c-head">
+                                <span class="c-symbol">${t.symbol.replace('EUR', '')}</span>
+                                <span>EUR</span>
+                            </div>
+                            <div class="c-price">€${fmtPrice}</div>
+                            <div class="c-change ${up ? 'up' : 'down'}">${up ? '+' : ''}${change.toFixed(2)}%</div>
+                        </div>
+                    `;
+                });
+            } catch(e) {}
+        }
+
+        async function fetchFleetStatus() {
+            try {
+                const response = await fetch('/fleet_stats.json');
+                const data = await response.json();
+                
+                const list = document.getElementById('fleet-list');
+                list.innerHTML = '';
+                
+                // Filtra solo quelli online (eccetto vecchi bot per non far confusione)
+                const bots = Object.entries(data.fleet)
+                    .filter(([name, info]) => info.status === 'ONLINE')
+                    .sort((a, b) => a[0].localeCompare(b[0]));
+
+                bots.forEach(([name, info]) => {
+                    const isVault = name.includes('VAULT');
+                    const cleanName = name.replace('-', ' ');
+                    
+                    list.innerHTML += `
+                        <div class="fleet-item ${isVault ? 'vault' : 'online'}">
+                            <div>
+                                <div class="bot-name">${isVault ? '🛡️ ' : '🤖 '}${cleanName}</div>
+                                <div class="bot-ping">EXE: ${info.script} | PING: ${info.last_seen}</div>
+                            </div>
+                            <div class="status-dot online"></div>
+                        </div>
+                    `;
+                });
+            } catch(e) {}
+        }
+        
+        async function fetchBalances() {
+            // Simuliamo il recupero dei dati dal quant_status o da un endpoint fittizio. 
+            // Per avere i dati reali creeremo un piccolo script json backend.
+            try {
+                const response = await fetch('/balances.json');
+                const data = await response.json();
+                
+                
+                
+                document.getElementById('stat-vault').innerText = data.vault + '€';
+                
+                
+                if(data.mexc_liquid) {
+                    document.getElementById('stat-mexc').innerText = data.mexc_liquid + '$';
+                }
+                if(data.bitget_liquid) {
+                    let pnl = parseFloat(data.bitget_pnl) || 0;
+                    let sign = pnl >= 0 ? '+' : '';
+                    let color = pnl >= 0 ? 'green' : 'red';
+                    document.getElementById('stat-bitget').innerHTML = `${data.bitget_liquid}$ <br><span style="font-size:12px; color:${color}">PNL: ${sign}${pnl.toFixed(2)}$</span>`;
+                }
+                if(data.delta_status) {
+                    document.getElementById('stat-delta').innerHTML = `${data.delta_status}<br><span style="font-size:12px; color:#aaa">Liquid: ${data.liquid}€</span>`;
+                }
+
+                document.getElementById('stat-target').innerHTML = `${data.profit_today}€ / ${data.target}€`;
+                
+                // Aggiorna progress bar
+                let p = (parseFloat(data.profit_today) / parseFloat(data.target)) * 100;
+                if(p < 0) p = 0; if(p > 100) p = 100;
+                document.getElementById('target-progress').style.width = p + '%';
+
+                
+            } catch(e) {}
+        }
+        
+        async function fetchLogs() {
+            try {
+                const response = await fetch('/syslogs.json');
+                const logs = await response.json();
+                
+                const term = document.getElementById('terminal-log');
+                term.innerHTML = '';
+                
+                logs.forEach(l => {
+                    let colorClass = 'log-info';
+                    if (l.includes('BUY') || l.includes('ACQUISITA')) colorClass = 'log-buy';
+                    if (l.includes('SELL') || l.includes('PROFIT')) colorClass = 'log-sell';
+                    if (l.includes('VAULT') || l.includes('CASSAFORTE')) colorClass = 'log-highlight';
+                    
+                    const time = l.substring(11, 19);
+                    const msg = l.substring(22);
+                    
+                    term.innerHTML += `<div class="log-line"><span class="log-time">${time}</span> <span class="${colorClass}">${msg}</span></div>`;
+                });
+                
+                // Auto scroll to bottom
+                term.scrollTop = term.scrollHeight;
+            } catch(e) {}
+        }
+
+        // Forza ricarica immagine grafico bypassando cache
+        function refreshChart() {
+            const img = document.getElementById('profit-chart');
+            if(img) img.src = '/profit_chart.png?t=' + new Date().getTime();
+        }
+
+        
+        async function fetchZabbix() {
+            try {
+                const response = await fetch('/zabbix_metrics.json');
+                const data = await response.json();
+                
+                const tbody = document.querySelector('#zabbix-table tbody');
+                tbody.innerHTML = '';
+                
+                let htmlRows = '';
+                for(let bot in data.bots) {
+                    const info = data.bots[bot];
+                    let statusClass = 'alert-red';
+                    if(info.status === 'ONLINE') statusClass = 'alert-green';
+                    else if(info.status.includes('ZOMBIE')) statusClass = 'alert-yellow';
+                    
+                    htmlRows += `<tr>
+                        <td>${bot}</td>
+                        <td class="${statusClass}">${info.status}</td>
+                        <td>${info.pid}</td>
+                        <td class="${info.cpu > 10 ? 'alert-yellow' : ''}">${info.cpu.toFixed(1)}%</td>
+                        <td class="${info.mem > 5 ? 'alert-yellow' : ''}">${info.mem.toFixed(1)}%</td>
+                        <td class="${info.log_age_s > 600 ? 'alert-yellow' : ''}">${info.log_age_s}s ago</td>
+                    </tr>`;
+                }
+                tbody.innerHTML = htmlRows;
+                
+                const chart = document.getElementById('zabbix-chart');
+                chart.innerHTML = '';
+                
+                // Max 100% per colonna (scalato sul max cpu storico)
+                let maxCpu = 1;
+                data.history.forEach(h => { if(h.cpu > maxCpu) maxCpu = h.cpu; });
+                
+                data.history.forEach(h => {
+                    const pct = (h.cpu / maxCpu) * 100;
+                    chart.innerHTML += `<div class="bar-col" style="height: ${Math.max(2, pct)}%" title="${h.time} | CPU: ${h.cpu}% | MEM: ${h.mem}%"></div>`;
+                });
+                
+            } catch(e) {}
+        }
+
+        function updateAll() {
+            fetchMarketData();
+            fetchZabbix();
+            fetchFleetStatus();
+            fetchBalances();
+            fetchLogs();
+            refreshChart();
+        }
+
+        // Init
+        updateAll();
+        setInterval(updateAll, 10000); // Aggiorna ogni 10 sec
+    </script>
+</body>
+</html>

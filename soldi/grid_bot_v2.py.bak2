@@ -1,0 +1,323 @@
+#!/usr/bin/env python3
+"""
+DENARO GRID BOT V2 — NUVOLA
+Grid ETH/EUR con tracking fill, ribilanciamento, 9 livelli
+Budget: €200 | Target: €2-5/giorno
+"""
+
+import ccxt
+import os
+import time
+import json
+import logging
+import os, requests
+from datetime import datetime, timedelta
+from dotenv import load_dotenv
+
+def send_alert(msg):
+    try:
+        load_dotenv()
+        t = os.getenv('TG_BOT_TOKEN')
+        c = os.getenv('TG_CHAT_ID', '277954993')
+        requests.post(f'https://api.telegram.org/bot{t}/sendMessage', json={'chat_id': c, 'text': '🤖 Grid: ' + msg})
+    except: pass
+
+
+load_dotenv('/home/sergio/.openclaw/workspace/denaro/.env')
+
+logging.basicConfig(
+    filename='/home/sergio/.openclaw/workspace/denaro/grid_bot_v2.log',
+    level=logging.INFO,
+    format='%(asctime)s - [GRID V2] - %(message)s'
+)
+logger = logging.getLogger()
+
+# Also log to console
+console = logging.StreamHandler()
+console.setLevel(logging.INFO)
+logger.addHandler(console)
+
+CONFIG = {
+    'pair': 'ETH/EUR',
+    'budget': 200,           # Capitale nel grid
+    'grid_levels': 5,        # Livelli (2 buy + 2 sell) - Modalità TURBO
+    'grid_spacing_pct': 0.005,  # 0.8% tra livelli (ETH ha ~1-2%/giorno)
+    'order_size_eur': 35,    # ~€35 per ordine (era €25)
+    'reserve_eur': 20,       # Riserva non usata nel grid
+    'rebalance_trigger': 3,  # Ribilancia dopo N fill
+    'profit_target': 0.007,  # 0.7% profit per livello (dopo fee)
+    'max_retries': 3,
+    'retry_delay': 5,
+}
+
+class GridBotV2:
+    def __init__(self):
+        self.exchange = ccxt.binance({
+            'apiKey': os.getenv('BINANCE_API_KEY'),
+            'secret': os.getenv('BINANCE_API_SECRET'),
+            'enableRateLimit': True,
+        })
+        self.pair = CONFIG['pair']
+        self.symbol = 'ETH/EUR'
+        self.grid_levels = CONFIG['grid_levels']
+        self.grid_spacing_pct = CONFIG['grid_spacing_pct']
+        self.order_size_eur = CONFIG['order_size_eur']
+        self.reserve_eur = CONFIG['reserve_eur']
+        self.profit_target = CONFIG['profit_target']
+        self.rebalance_trigger = CONFIG['rebalance_trigger']
+
+        # Tracking
+        self.fills_since_rebalance = 0
+        self.total_profit = 0
+        self.fills_log = [] 
+        self.daily_profit = 0
+        self.daily_trades = 0
+        self.last_reset = datetime.now().day
+        self.last_rebalance_time = 0
+
+        logger.info("=" * 50)
+        logger.info("GRID BOT V2 — Avviato")
+        logger.info(f"Pair: {self.pair}")
+        logger.info(f"Budget: €{CONFIG['budget']}, Livelli: {self.grid_levels}")
+        logger.info(f"Order size: €{self.order_size_eur}")
+        logger.info(f"Grid spacing: {self.grid_spacing_pct*100:.1f}%")
+        logger.info("=" * 50)
+
+    def get_balance(self):
+        try:
+            bal = self.exchange.fetch_balance()
+            eur = bal.get('EUR', {}).get('free', 0)
+            eth = bal.get('ETH', {}).get('free', 0)
+            return eur, eth
+        except Exception as e:
+            logger.error(f"Errore bilancio: {e}")
+            return 0, 0
+
+    def get_total_value_eur(self):
+        try:
+            bal = self.exchange.fetch_balance()
+            eur = bal.get('EUR', {}).get('free', 0)
+            eth = bal.get('ETH', {}).get('free', 0)
+            price = self.exchange.fetch_ticker(self.pair)['last']
+            return eur + (eth * price)
+        except:
+            return 0
+
+    def cancel_all_orders(self):
+        try:
+            orders = self.exchange.fetch_open_orders(self.pair)
+            for o in orders:
+                try:
+                    self.exchange.cancel_order(o['id'], self.pair)
+                    logger.info(f"Cancellato ordine: {o['side']} @ {o['price']}")
+                except Exception:
+                    pass
+            logger.info(f"Cancellati {len(orders)} ordini")
+            return len(orders)
+        except Exception as e:
+            logger.error(f"Errore cancellazione: {e}")
+            return 0
+
+    def check_fills(self):
+        try:
+            closed = self.exchange.fetch_closed_orders(self.pair, limit=20)
+            now = time.time()
+            recent_window = 1800
+
+            filled = []
+            for o in closed:
+                if o['status'] == 'closed' and o['remaining'] == 0:
+                    fill_time = o['timestamp'] / 1000 if o['timestamp'] else 0
+                    if now - fill_time > recent_window:
+                        continue
+                    order_id = o.get('id', '')
+                    already_logged = any(f.get('order_id') == order_id for f in self.fills_log)
+                    if not already_logged:
+                        filled.append({
+                            'order_id': order_id,
+                            'side': o['side'],
+                            'price': o['price'],
+                            'amount': o['filled'],
+                            'cost': o.get('cost', 0),
+                            'fee': o.get('fee', {}),
+                            'timestamp': o['timestamp'],
+                            'datetime': str(datetime.fromtimestamp(fill_time)),
+                        })
+
+            for fill in filled:
+                self.fills_log.append(fill)
+                self.fills_since_rebalance += 1
+                self.daily_trades += 1
+
+                fee_cost = fill['fee'].get('cost', 0) if fill['fee'] else 0
+                fill_value = fill.get('cost', fill['price'] * fill['amount'])
+
+                if fill['side'] == 'buy':
+                    logger.info(f"BUY fill: {fill['amount']} ETH @ €{fill['price']:.2f} (€{fill_value:.2f})")
+                elif fill['side'] == 'sell':
+                    profit = fill_value - fee_cost
+                    self.total_profit += profit
+                    self.daily_profit += profit
+                    logger.info(f"SELL fill: {fill['amount']} ETH @ €{fill['price']:.2f} (€{fill_value:.2f}, fee: €{fee_cost:.3f}")
+                from notify import send_alert
+                send_alert("Grid Bot", f"✅ SELL eseguito\nPrezzo: €{fill['price']:.2f}\nValore: €{fill_value:.2f}") {fill['amount']} ETH @ €{fill['price']:.2f} (€{fill_value:.2f}, fee: €{fee_cost:.3f})")
+
+            if filled:
+                logger.info(f"Totale fill da controllare: {len(filled)}, da ultimo rebalance: {self.fills_since_rebalance}")
+                if self.fills_since_rebalance >= self.rebalance_trigger:
+                    logger.info(f">= {self.rebalance_trigger} fill — ribilanciamento!")
+                    self.place_grid()
+
+            return len(filled)
+
+        except Exception as e:
+            logger.error(f"Errore check fills: {e}")
+            return 0
+
+    def place_grid(self):
+        self.cancel_all_orders()
+        time.sleep(2)
+
+        try:
+            ticker = self.exchange.fetch_ticker(self.pair)
+            current_price = ticker['last']
+
+            eur_bal, eth_bal = self.get_balance()
+
+            if eur_bal < CONFIG['order_size_eur']:
+                logger.error(f"Fondi insufficienti: €{eur_bal:.2f}")
+                return False
+
+            half_levels = self.grid_levels // 2
+            orders_placed = 0
+
+            # Buy orders below current price
+            for i in range(1, half_levels + 1):
+                price = current_price * (1 - self.grid_spacing_pct * i)
+                amount = self.order_size_eur / price * 0.995
+                min_amount = 0.001
+
+                if amount >= min_amount and eur_bal >= self.order_size_eur:
+                    try:
+                        order = self.exchange.create_order(
+                            symbol=self.pair,
+                            type='limit',
+                            side='buy',
+                            amount=round(amount, 4),
+                            price=round(price, 2),
+                        )
+                        logger.info(f"BUY ordine: {amount:.4f} ETH @ €{price:.2f}")
+                        orders_placed += 1
+                        eur_bal -= self.order_size_eur
+                    except Exception as e:
+                        logger.error(f"Errore BUY ordine: {e}")
+
+            # Sell orders above current price
+            for i in range(1, half_levels + 1):
+                price = current_price * (1 + self.grid_spacing_pct * i)
+                amount = self.order_size_eur / current_price * 0.995
+                if amount >= min_amount:
+                    bal = self.exchange.fetch_balance()
+                    eth_free = bal.get('ETH', {}).get('free', 0)
+
+                    if eth_free >= amount:
+                        try:
+                            order = self.exchange.create_order(
+                                symbol=self.pair,
+                                type='limit',
+                                side='sell',
+                                amount=round(amount, 4),
+                                price=round(price, 2),
+                            )
+                            logger.info(f"SELL ordine: {amount:.4f} ETH @ €{price:.2f}")
+                            orders_placed += 1
+                        except Exception as e:
+                            logger.error(f"Errore SELL ordine (ETH insufficiente): {e}")
+                    else:
+                        logger.info(f"SKIP SELL @ €{price:.2f}: ETH insufficiente (ho {eth_free:.4f}, serve {amount:.4f})")
+
+            self.last_rebalance_time = time.time()
+            self.fills_since_rebalance = 0
+            logger.info(f"Grid piazzato: {orders_placed} ordini | Centro: €{current_price:.2f}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Errore piazzamento grid: {e}")
+            return False
+
+    def daily_report(self):
+        now = datetime.now()
+        if now.hour == 0 and now.minute < 2:
+            eur, eth = self.get_balance()
+            ticker = self.exchange.fetch_ticker(self.pair)
+            total = eur + (eth * ticker['last'])
+
+            logger.info("=" * 50)
+            logger.info(f"REPORT GIORNALIERO — {now.strftime('%Y-%m-%d')}")
+            logger.info(f"Profit oggi: €{self.daily_profit:.2f}")
+            logger.info(f"Trades oggi: {self.daily_trades}")
+            logger.info(f"Profit totale: €{self.total_profit:.2f}")
+            logger.info(f"Totale portafoglio: €{total:.2f}")
+            logger.info(f"EUR liberi: €{eur:.2f}")
+            logger.info(f"ETH liberi: {eth:.4f}")
+            logger.info("=" * 50)
+
+            self.daily_profit = 0
+            self.daily_trades = 0
+            self.last_reset = now.day
+
+    def emergency_check(self):
+        try:
+            ohlcv = self.exchange.fetch_ohlcv(self.pair, '1h', limit=24)
+            prices = [x[4] for x in ohlcv]
+            if len(prices) < 24:
+                return
+            high_24h = max(prices)
+            current = prices[-1]
+            drop = (high_24h - current) / high_24h
+            if drop > 0.15:
+                logger.error(f"EMERGENCY: ETH drop {drop*100:.1f}% in 24h. Cancello tutti gli ordini.")
+                self.cancel_all_orders()
+                return True
+        except Exception as e:
+            logger.error(f"Errore emergency check: {e}")
+        return False
+
+    def run(self):
+        logger.info("Avvio loop principale...")
+        self.place_grid()
+
+        check_count = 0
+        while True:
+            try:
+                time.sleep(60)
+                check_count += 1
+
+                self.check_fills()
+
+                if check_count % 5 == 0:
+                    ticker = self.exchange.fetch_ticker(self.pair)
+                    current = ticker['last']
+                    self.emergency_check()
+
+                if datetime.now().hour == 0 and datetime.now().minute < 2:
+                    self.daily_report()
+
+                if check_count % 30 == 0:
+                    elapsed = time.time() - self.last_rebalance_time
+                    if elapsed > 1800:
+                        ticker = self.exchange.fetch_ticker(self.pair)
+                        logger.info(f"Rebalance periodico (30 min)")
+                        self.place_grid()
+
+            except KeyboardInterrupt:
+                logger.info("Interruzione richiesta. Cancello ordini e esco.")
+                self.cancel_all_orders()
+                break
+            except Exception as e:
+                logger.error(f"Loop error: {e}")
+                time.sleep(30)
+
+if __name__ == "__main__":
+    bot = GridBotV2()
+    bot.run()
