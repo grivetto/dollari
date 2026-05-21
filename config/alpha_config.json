@@ -1,0 +1,92 @@
+{
+  "version": "2.0",
+  "exchange": {
+    "name": "binance",
+    "sandbox": false,
+    "rate_limit": 20
+  },
+  "pairs": ["BTC/EUR", "ETH/EUR", "SOL/EUR", "ADA/EUR", "DOGE/EUR"],
+  "capital": {
+    "min_alloc_per_trade": 10.0,
+    "max_alloc_per_trade": 45.0,
+    "max_open_positions": 3,
+    "max_correlation": 0.7,
+    "reserve_ratio": 0.0
+  },
+  "risk": {
+    "max_daily_loss_pct": 3.0,
+    "max_drawdown_pct": 8.0,
+    "kelly_fraction": 0.5,
+    "trailing_stop_activation": 0.5,
+    "circuit_breaker_trades": 4,
+    "circuit_breaker_loss_pct": 15.0,
+    "circuit_breaker_cooldown_min": 30
+  },
+  "learning": {
+    "adjustment_interval_hours": 4,
+    "min_trades_for_adjustment": 10,
+    "strategy_weight_decay": 0.95
+  },
+  "strategies": {
+    "momentum": {
+      "enabled": true,
+      "weight": 0.30,
+      "timeframes": ["5m", "15m"],
+      "min_volume_eur": 50000.0,
+      "volume_surge_threshold": 1.5,
+      "stop_loss_pct": 0.6,
+      "profit_target_pct": 1.5,
+      "breakout_atr_multiple": 1.5,
+      "confirmation_bars": 2
+    },
+    "mean_reversion": {
+      "enabled": true,
+      "weight": 0.25,
+      "timeframes": ["1m", "5m"],
+      "bollinger_deviation": 2.0,
+      "rsi_oversold": 30,
+      "rsi_overbought": 70,
+      "stop_loss_pct": 0.4,
+      "profit_target_pct": 1.0
+    },
+    "volatility_scalp": {
+      "enabled": true,
+      "weight": 0.20,
+      "timeframes": ["1m"],
+      "spread_max_bps": 10,
+      "min_atr_pct": 0.08,
+      "max_atr_pct": 0.5,
+      "volume_spike_multiplier": 2.0,
+      "stop_loss_pct": 0.3,
+      "profit_target_pct": 0.8
+    },
+    "breakout": {
+      "enabled": true,
+      "weight": 0.10,
+      "timeframes": ["5m"],
+      "stop_loss_pct": 0.8,
+      "profit_target_pct": 2.0,
+      "volume_surge_threshold": 2.0
+    },
+    "scalping": {
+      "enabled": true,
+      "weight": 0.15,
+      "timeframes": ["1m"],
+      "spread_max_bps": 5,
+      "volume_spike_multiplier": 2.5,
+      "stop_loss_pct": 0.2,
+      "profit_target_pct": 0.5
+    }
+  },
+  "logging": {
+    "level": "INFO",
+    "max_bytes": 52428800,
+    "backup_count": 10,
+    "stats_file": "logs/stats.json",
+    "csv_file": "logs/trades.csv"
+  },
+  "coexistence": {
+    "enabled": false,
+    "respect_grid_bots": false
+  }
+}
